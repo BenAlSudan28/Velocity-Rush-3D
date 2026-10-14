@@ -41,6 +41,16 @@ jobs:
           fi
           echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+
+          if [ ! -e "$SDK_DIR/cmdline-tools/latest" ]; then
+            first="$(ls -d "$SDK_DIR"/cmdline-tools/*/ 2>/dev/null | head -n1 || true)"
+            if [ -n "$first" ]; then
+              ln -s "${first%/}" "$SDK_DIR/cmdline-tools/latest" 2>/dev/null \
+                || sudo ln -s "${first%/}" "$SDK_DIR/cmdline-tools/latest" \
+                || true
+            fi
+          fi
+
           SDKMANAGER=""
           for c in "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" "$SDK_DIR"/cmdline-tools/*/bin/sdkmanager; do
             if [ -x "$c" ]; then SDKMANAGER="$c"; break; fi
@@ -48,12 +58,16 @@ jobs:
           if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager || true)"; fi
           echo "Android SDK: $SDK_DIR"
           echo "sdkmanager: ${SDKMANAGER:-not found}"
+
           if [ -n "$SDKMANAGER" ]; then
             yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null 2>&1 || true
-            "$SDKMANAGER" --sdk_root="$SDK_DIR" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "build-tools;35.0.1" \
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" \
+              "platform-tools" "platforms;android-34" "platforms;android-35" \
+              "build-tools;34.0.0" "build-tools;35.0.1" \
               || echo "WARNING: package install failed, using preinstalled packages"
           fi
           ls "$SDK_DIR/build-tools" || { echo "ERROR: no build-tools found"; exit 1; }
+          ls "$SDK_DIR/platform-tools" >/dev/null || { echo "ERROR: no platform-tools found"; exit 1; }
 
       - name: Download Godot editor and matching export templates
         shell: bash
@@ -106,7 +120,7 @@ jobs:
           echo "Android SDK: $SDK_DIR"
           echo "Java SDK: $JAVA_HOME"
 
-      - name: Fix Android export preset (Min SDK / Target SDK error)
+      - name: Fix Android export preset (Min SDK / Target SDK)
         shell: bash
         run: |
           set -euo pipefail
@@ -153,6 +167,10 @@ jobs:
             echo "ERROR: Godot reported export configuration errors (see log above)."
             exit 1
           fi
+          if grep -Eq "Project export for preset .* failed" build/export.log; then
+            echo "ERROR: Godot reported that the export failed (see log above)."
+            exit 1
+          fi
           test -s build/VelocityRush3D.apk
           ls -lh build/VelocityRush3D.apk
 
@@ -171,4 +189,4 @@ jobs:
           name: export-log
           path: build/export.log
           if-no-files-found: ignore
-          retention-days: 7
+          retention-days: 14
