@@ -67,30 +67,269 @@ jobs:
           set -Eeuo pipefail
 
           WORK_DIR="$RUNNER_TEMP/godot"
-
           mkdir -p "$WORK_DIR/bin" "$WORK_DIR/templates"
+
+          echo "Downloading Godot ${GODOT_VERSION}..."
 
           curl -fL --retry 3 \
             "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
             -o "$WORK_DIR/godot.zip"
 
+          echo "Downloading Android export templates..."
+
           curl -fL --retry 3 \
             "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
             -o "$WORK_DIR/templates.tpz"
 
+          echo "Extracting Godot..."
+
           unzip -q "$WORK_DIR/godot.zip" -d "$WORK_DIR/bin"
+
+          echo "Extracting export templates..."
+
           unzip -q "$WORK_DIR/templates.tpz" -d "$WORK_DIR/templates"
 
           GODOT_BIN="$WORK_DIR/bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
 
           if [[ ! -f "$GODOT_BIN" ]]; then
             echo "::error::Godot executable not found."
-            find "$WORK_DIR/bin" -type f
+            find "$WORK_DIR/bin" -maxdepth 3 -type f
             exit 1
           fi
 
           chmod +x "$GODOT_BIN"
-
           echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
 
-          TEMPLATE
+          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+          mkdir -p "$TEMPLATE_DIR"
+
+          if [[ -d "$WORK_DIR/templates/templates" ]]; then
+            cp -a "$WORK_DIR/templates/templates/." "$TEMPLATE_DIR/"
+          else
+            cp -a "$WORK_DIR/templates/." "$TEMPLATE_DIR/"
+          fi
+
+          if [[ ! -f "$TEMPLATE_DIR/android_debug.apk" ]]; then
+            echo "::error::Android debug export template is missing."
+            echo "Template directory contents:"
+            find "$TEMPLATE_DIR" -maxdepth 3 -type f
+            exit 1
+          fi
+
+          echo "Godot executable installed successfully."
+          echo "Android export templates installed successfully."
+
+          "$GODOT_BIN" --headless --version
+
+      - name: Create Android debug keystore
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p "$HOME/.android"
+
+          keytool -genkeypair \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -keypass android \
+            -dname "CN=Android Debug,O=Android,C=US" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000
+
+          {
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$HOME/.android/debug.keystore"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
+          } >> "$GITHUB_ENV"
+
+      - name: Configure Godot Android settings
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+
+          mkdir -p "$HOME/.config/godot"
+
+          cat > "$HOME/.config/godot/editor_settings-4.4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$SDK_ROOT"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          export/android/debug_keystore = "$HOME/.android/debug.keystore"
+          export/android/debug_keystore_user = "androiddebugkey"
+          export/android/debug_keystore_pass = "android"
+          EOF
+
+      - name: Validate project and repair Android export settings
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          test -f project.godot || {
+            echo "::error::project.godot is missing from repository root."
+            exit 1
+          }
+
+          test -f export_presets.cfg || {
+            echo "::error::export_presets.cfg is missing."
+            exit 1
+          }
+
+          grep -Fq 'name="Android"' export_presets.cfg || {
+            echo "::error::Android export preset was not found."
+            exit 1
+          }
+
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+
+          project = Path("project.godot")
+          data = project.read_text(encoding="utf-8")
+
+          key = "textures/vram_compression/import_etc2_astc"
+          pattern = r"^" + re.escape(key) + r"\s*=.*$"
+
+          if re.search(pattern, data, re.MULTILINE):
+              data = re.sub(
+                  pattern,
+                  key + "=true",
+                  data,
+                  flags=re.MULTILINE,
+              )
+          elif re.search(r"^\[rendering\]\s*$", data, re.MULTILINE):
+              data = re.sub(
+                  r"^\[rendering\]\s*$",
+                  "[rendering]\n\n" + key + "=true",
+                  data,
+                  count=1,
+                  flags=re.MULTILINE,
+              )
+          else:
+              data = data.rstrip() + "\n\n[rendering]\n\n" + key + "=true\n"
+
+          project.write_text(data, encoding="utf-8")
+          print("Enabled Android ETC2/ASTC texture compression.")
+
+          preset = Path("export_presets.cfg")
+          cfg = preset.read_text(encoding="utf-8")
+
+          if not Path("icon.png").is_file():
+              cfg = re.sub(
+                  r'^launcher_icons/main_192x192=.*$',
+                  'launcher_icons/main_192x192=""',
+                  cfg,
+                  flags=re.MULTILINE,
+              )
+              print("icon.png not found; disabled the optional custom launcher icon.")
+
+          preset.write_text(cfg, encoding="utf-8")
+          print("Android export preset checked.")
+          PY
+
+      - name: Import Godot project
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p build
+
+          echo "Importing Godot project in headless mode..."
+
+          "$GODOT_BIN" \
+            --headless \
+            --editor \
+            --path "$GITHUB_WORKSPACE" \
+            --import \
+            --quit 2>&1 | tee build/import.log
+
+          echo "Godot project import completed."
+
+      - name: Diagnose Android export configuration
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          echo "===== Godot version ====="
+          "$GODOT_BIN" --headless --version
+
+          echo "===== Java ====="
+          java -version 2>&1
+
+          echo "===== Android SDK ====="
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          echo "JAVA_HOME=$JAVA_HOME"
+
+          ls -la "$ANDROID_HOME/platforms"
+          ls -la "$ANDROID_HOME/build-tools"
+          ls -la "$ANDROID_HOME/ndk"
+
+          echo "===== Export templates ====="
+          ls -lh "$HOME/.local/share/godot/export_templates/4.4.1.stable"
+
+          echo "===== Debug keystore ====="
+          ls -lh "$HOME/.android/debug.keystore"
+
+          echo "===== Export preset ====="
+          cat export_presets.cfg
+
+          echo "===== Godot editor settings ====="
+          cat "$HOME/.config/godot/editor_settings-4.4.tres"
+
+      - name: Export Android debug APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          mkdir -p build
+
+          echo "Exporting Velocity Rush 3D APK..."
+
+          set +e
+
+          "$GODOT_BIN" \
+            --headless \
+            --path "$GITHUB_WORKSPACE" \
+            --export-debug "Android" \
+            "$GITHUB_WORKSPACE/build/VelocityRush3D.apk" \
+            2>&1 | tee build/export.log
+
+          EXPORT_STATUS=${PIPESTATUS[0]}
+
+          set -e
+
+          if [[ "$EXPORT_STATUS" -ne 0 ]]; then
+            echo "::error::Godot Android export failed. Check build/export.log."
+            exit "$EXPORT_STATUS"
+          fi
+
+          if [[ ! -s build/VelocityRush3D.apk ]]; then
+            echo "::error::APK was not created."
+            exit 1
+          fi
+
+          echo "APK created successfully:"
+          ls -lh build/VelocityRush3D.apk
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velocity-Rush-3D-Android-APK
+          path: build/VelocityRush3D.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velocity-Rush-3D-Diagnostics
+          path: build/
+          if-no-files-found: ignore
+          retention-days: 7
