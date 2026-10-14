@@ -265,7 +265,18 @@ jobs:
           echo "Java SDK: $JAVA_HOME"
           echo "Checking export preset..."
 
-          grep -n -A 100 '^preset\.0' export_presets.cfg
+if [[ ! -f export_presets.cfg ]]; then
+  echo "::error::export_presets.cfg not found."
+  exit 1
+fi
+
+if ! grep -Fq 'name="Android"' export_presets.cfg; then
+  echo "::error::Android export preset was not found."
+  cat export_presets.cfg
+  exit 1
+fi
+
+echo "Export preset found."
 
           echo "Starting Android APK export..."
 
