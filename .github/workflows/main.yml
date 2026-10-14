@@ -1,1 +1,83 @@
-5
+name: Build Velocity Rush 3D APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    name: Export Android APK
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    env:
+      GODOT_BIN: ./godot-bin/Godot_v4.4.1-stable_linux.x86_64
+
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v4
+
+      - name: Check project files
+        run: |
+          test -f project.godot || {
+            echo "::error::project.godot not found in repository root"
+            exit 1
+          }
+
+          test -f export_presets.cfg || {
+            echo "::error::export_presets.cfg not found"
+            exit 1
+          }
+
+          grep -q 'name="Android"' export_presets.cfg || {
+            echo "::error::Export preset must be named Android"
+            exit 1
+          }
+
+      - name: Install Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      # FIX: Use a valid SDK package instead of the obsolete "tools" package.
+      - name: Install Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+
+      - name: Install Android packages
+        run: |
+          sdkmanager --sdk_root="$ANDROID_HOME" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.1" \
+            "cmdline-tools;latest" \
+            "cmake;3.10.2.4988404" \
+            "ndk;28.1.13356709"
+
+      - name: Download Godot 4.4.1
+        run: |
+          wget -q \
+            https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip \
+            -O godot.zip
+
+          unzip -q godot.zip -d godot-bin
+          chmod +x "$GODOT_BIN"
+
+      - name: Install matching Android export templates
+        run: |
+          wget -q \
+            https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz \
+            -O godot-templates.tpz
+
+          mkdir -p /tmp/godot-templates
+          unzip -q godot-templates.tpz -d /tmp/godot-templates
+
+          TEMPLATES_DIR="$HOME/.local/share/godot/export_templates
