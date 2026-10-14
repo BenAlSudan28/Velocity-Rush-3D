@@ -26,48 +26,66 @@ jobs:
       APK_PATH: "build/VelocityRush3D.apk"
 
     steps:
-      # --------------------------------------------------
+      # ==========================================
       # 1. Download project
-      # --------------------------------------------------
+      # ==========================================
       - name: Checkout project
         uses: actions/checkout@v4
 
-      # --------------------------------------------------
+      # ==========================================
       # 2. Install Java 17
-      # --------------------------------------------------
+      # ==========================================
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # --------------------------------------------------
-      # 3. Install Android SDK
-      # --------------------------------------------------
+      # ==========================================
+      # 3. FIX ANDROID SDK INSTALLATION
+      # ==========================================
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          cmdline-tools-version: 12266719
+          packages: "platform-tools"
+          accept-android-sdk-licenses: "yes"
+          log-accepted-android-sdk-licenses: "false"
 
+      # ==========================================
+      # 4. Install required Android packages
+      # ==========================================
       - name: Install Android SDK packages
         shell: bash
         run: |
           set -euo pipefail
 
-          sdkmanager --install \
-            "platform-tools" \
-            "platforms;android-34" \
-            "platforms;android-35" \
-            "build-tools;34.0.0" \
-            "build-tools;35.0.1"
-
+          echo "========== ANDROID SDK =========="
           echo "ANDROID_HOME=$ANDROID_HOME"
           echo "JAVA_HOME=$JAVA_HOME"
+
+          echo "========== SDK MANAGER =========="
+
+          command -v sdkmanager
+
+          sdkmanager --install \
+            "platforms;android-34" \
+            "build-tools;34.0.0"
+
+          echo "========== VERIFY SDK =========="
+
+          test -d "$ANDROID_HOME/platform-tools"
+          test -d "$ANDROID_HOME/platforms/android-34"
+          test -d "$ANDROID_HOME/build-tools/34.0.0"
 
           java -version
           adb version
 
-      # --------------------------------------------------
-      # 4. Download Godot Engine
-      # --------------------------------------------------
+          echo "Android SDK installation completed."
+
+      # ==========================================
+      # 5. Download Godot 4.4.1
+      # ==========================================
       - name: Download Godot Engine
         shell: bash
         run: |
@@ -95,9 +113,9 @@ jobs:
 
           "$GODOT_BIN" --version
 
-      # --------------------------------------------------
-      # 5. Install matching Godot export templates
-      # --------------------------------------------------
+      # ==========================================
+      # 6. Install matching export templates
+      # ==========================================
       - name: Install Godot export templates
         shell: bash
         run: |
@@ -116,50 +134,49 @@ jobs:
             -d godot-bin/templates/extracted
 
           SOURCE_DIR="godot-bin/templates/extracted/templates"
+
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
 
           if [ ! -d "$SOURCE_DIR" ]; then
-            echo "::error::Export templates directory not found."
+            echo "::error::Export templates not found."
             find godot-bin/templates -maxdepth 4 -type f
             exit 1
           fi
 
           mkdir -p "$TEMPLATE_DIR"
+
           cp -a "$SOURCE_DIR/." "$TEMPLATE_DIR/"
 
-          echo "Installed templates:"
+          echo "Godot export templates installed:"
           ls -la "$TEMPLATE_DIR"
 
-      # --------------------------------------------------
-      # 6. Verify project files
-      # --------------------------------------------------
+      # ==========================================
+      # 7. Verify project files
+      # ==========================================
       - name: Verify project files
         shell: bash
         run: |
           set -euo pipefail
 
-          echo "========== PROJECT ROOT =========="
-          ls -la
-
           if [ ! -f project.godot ]; then
-            echo "::error::project.godot is missing."
+            echo "::error::project.godot not found."
             exit 1
           fi
 
           if [ ! -f export_presets.cfg ]; then
-            echo "::error::export_presets.cfg is missing."
+            echo "::error::export_presets.cfg not found."
             exit 1
           fi
 
-          echo "========== PROJECT CONFIG =========="
-          cat project.godot
+          echo "========== PROJECT ROOT =========="
+          ls -la
 
           echo "========== EXPORT PRESET =========="
           cat export_presets.cfg
 
-      # --------------------------------------------------
-      # 7. Repair Android export preset
-      # --------------------------------------------------
+      # ==========================================
+      # 8. Repair Android export preset
+      # ==========================================
       - name: Repair Android export preset
         shell: bash
         run: |
@@ -173,17 +190,14 @@ jobs:
           text = path.read_text(encoding="utf-8")
 
           sections = re.split(r'(?=^\[)', text, flags=re.M)
+
           found = False
           output = []
 
           for section in sections:
-              first_line = (
-                  section.splitlines()[0]
-                  if section.splitlines()
-                  else ""
-              )
+              lines = section.splitlines()
 
-              if first_line.strip() == "[preset.0]":
+              if lines and lines[0].strip() == "[preset.0]":
                   found = True
 
                   section = re.sub(
@@ -204,20 +218,11 @@ jobs:
                       section
                   )
 
-                  if not re.search(
-                      r'(?m)^gradle_build/use_gradle_build=',
-                      section
-                  ):
-                      section = (
-                          section.rstrip()
-                          + '\ngradle_build/use_gradle_build=false\n'
-                      )
-
               output.append(section)
 
           if not found:
               raise SystemExit(
-                  "Android preset [preset.0] was not found."
+                  "ERROR: Android preset [preset.0] not found."
               )
 
           path.write_text(
@@ -228,12 +233,12 @@ jobs:
           print("Android export preset repaired.")
           PY
 
-          echo "========== REPAIRED PRESET =========="
+          echo "========== UPDATED CFG =========="
           cat export_presets.cfg
 
-      # --------------------------------------------------
-      # 8. Validate launcher icon
-      # --------------------------------------------------
+      # ==========================================
+      # 9. Validate launcher icon
+      # ==========================================
       - name: Validate Android launcher icon
         shell: bash
         run: |
@@ -249,11 +254,11 @@ jobs:
           icon = Path("icon.png")
 
           if icon.is_file():
-              print("Found project icon:", icon)
+              print("Project icon found.")
               print("Size:", icon.stat().st_size, "bytes")
           else:
-              print("WARNING: icon.png was not found in the project root.")
-              print("Clearing the explicit launcher icon override.")
+              print("WARNING: icon.png not found in project root.")
+              print("Clearing explicit launcher icon override.")
 
               text = re.sub(
                   r'(?m)^launcher_icons/main_192x192=.*$',
@@ -263,23 +268,12 @@ jobs:
 
               cfg.write_text(text, encoding="utf-8")
 
-          print("========== ICON SETTINGS ==========")
-
-          for line in text.splitlines():
-              if line.startswith("launcher_icons/"):
-                  print(line)
+          print("Icon validation completed.")
           PY
 
-          echo "========== ICON FILE SEARCH =========="
-
-          find . -maxdepth 4 -type f \
-            \( -iname "icon.png" -o -iname "*icon*.png" \) \
-            -not -path "./.git/*" \
-            -print || true
-
-      # --------------------------------------------------
-      # 9. Configure Godot Android paths
-      # --------------------------------------------------
+      # ==========================================
+      # 10. Configure Godot SDK paths
+      # ==========================================
       - name: Configure Godot Android paths
         shell: bash
         run: |
@@ -301,9 +295,9 @@ jobs:
 
           echo "Godot SDK paths configured."
 
-      # --------------------------------------------------
-      # 10. Prepare Android debug signing
-      # --------------------------------------------------
+      # ==========================================
+      # 11. Create Android debug keystore
+      # ==========================================
       - name: Prepare Android build
         shell: bash
         run: |
@@ -332,12 +326,11 @@ jobs:
             echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
           } >> "$GITHUB_ENV"
 
-          echo "Debug signing keystore created and configured."
-          ls -lh "$KEYSTORE"
+          echo "Android debug keystore configured."
 
-      # --------------------------------------------------
-      # 11. Import project resources
-      # --------------------------------------------------
+      # ==========================================
+      # 12. Import project resources
+      # ==========================================
       - name: Import Godot project
         shell: bash
         run: |
@@ -356,13 +349,13 @@ jobs:
           RESULT=${PIPESTATUS[0]}
 
           if [ "$RESULT" -ne 0 ]; then
-            echo "::error::Godot project import failed."
+            echo "::error::Godot import failed."
             exit "$RESULT"
           fi
 
-      # --------------------------------------------------
-      # 12. Diagnose and export APK
-      # --------------------------------------------------
+      # ==========================================
+      # 13. Export APK
+      # ==========================================
       - name: Export debug APK
         shell: bash
         run: |
@@ -377,18 +370,19 @@ jobs:
           echo "========== GODOT VERSION =========="
           "$GODOT_BIN" --version
 
-          echo "========== ANDROID ENVIRONMENT =========="
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "JAVA_HOME=$JAVA_HOME"
+          echo "========== ANDROID SDK =========="
+          echo "$ANDROID_HOME"
 
-          echo "========== SIGNING CONFIGURATION =========="
+          echo "========== JAVA =========="
+          echo "$JAVA_HOME"
+
+          echo "========== SIGNING =========="
           test -s "$GODOT_ANDROID_KEYSTORE_DEBUG_PATH"
-          echo "Debug keystore exists."
 
           echo "========== EXPORT PRESET =========="
           cat export_presets.cfg
 
-          echo "========== GODOT EXPORT =========="
+          echo "========== EXPORTING APK =========="
 
           set +e
 
@@ -399,68 +393,22 @@ jobs:
             --export-debug "$PRESET_NAME" "$APK_PATH" \
             2>&1 | tee "$LOG_PATH"
 
-          EXPORT_STATUS=${PIPESTATUS[0]}
+          RESULT=${PIPESTATUS[0]}
 
           set -e
 
-          echo "========== EXPORT STATUS =========="
-          echo "$EXPORT_STATUS"
-
-          echo "========== ERROR CONTEXT =========="
+          echo "========== EXPORT ERROR DETAILS =========="
 
           grep -ni -B 8 -A 12 -E \
             'configuration errors|ERROR:|keystore|icon|template|Android SDK|Java SDK|failed|invalid|missing|required' \
             "$LOG_PATH" || true
 
-          if [ "$EXPORT_STATUS" -ne 0 ] || [ ! -s "$APK_PATH" ]; then
-            echo "::error::Android APK export failed. Inspect build/export.log."
+          if [ "$RESULT" -ne 0 ] || [ ! -s "$APK_PATH" ]; then
+            echo "::error::APK export failed."
             exit 1
           fi
 
-          echo "========== APK CREATED =========="
+          echo "APK created successfully."
           ls -lh "$APK_PATH"
 
-      # --------------------------------------------------
-      # 13. Verify APK signature
-      # --------------------------------------------------
-      - name: Verify APK
-        if: always()
-        shell: bash
-        run: |
-          set -u
-
-          echo "========== APK FILE =========="
-
-          if [ -s "$APK_PATH" ]; then
-            ls -lh "$APK_PATH"
-            file "$APK_PATH" || true
-          else
-            echo "APK not found or empty."
-          fi
-
-          echo "========== APK SIGNATURE =========="
-
-          for TOOL in \
-            "$ANDROID_HOME/build-tools/35.0.1/apksigner" \
-            "$ANDROID_HOME/build-tools/34.0.0/apksigner"
-          do
-            if [ -x "$TOOL" ] && [ -s "$APK_PATH" ]; then
-              "$TOOL" verify --verbose "$APK_PATH" || true
-              break
-            fi
-          done
-
-      # --------------------------------------------------
-      # 14. Upload APK and diagnostic logs
-      # --------------------------------------------------
-      - name: Upload APK and diagnostic logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: Velocity-Rush-3D-Android-Build
-          if-no-files-found: warn
-          retention-days: 14
-          path: |
-            build/VelocityRush3D.apk
-            build/import.log
-            build/export.log
+      # =========================================
