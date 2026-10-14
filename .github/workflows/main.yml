@@ -1,68 +1,160 @@
-name: Build Velocity Rush 3D Android APK
+name: Build VELOCITY RUSH 3D Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+    branches: [main, master]
+    paths-ignore:
+      - "README.md"
+      - "docs/**"
 
 permissions:
   contents: read
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Import, validate and export APK
     runs-on: ubuntu-22.04
+    timeout-minutes: 45
+
+    env:
+      GODOT_VERSION: "4.4.1"
+      GODOT_RELEASE: "4.4.1-stable"
 
     steps:
-      - name: Checkout project
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y wget unzip openjdk-17-jdk python3
+      # Java 17 is required by the Android SDK tools.
+      - name: Set up Java 17 for Android SDK setup
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-      - name: Install Android SDK
-        run: |
-          mkdir -p "$HOME/android-sdk/cmdline-tools"
-          cd "$HOME"
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O android-tools.zip
-          unzip -q android-tools.zip
-          mkdir -p "$HOME/android-sdk/cmdline-tools/latest"
-          mv cmdline-tools/* "$HOME/android-sdk/cmdline-tools/latest/"
-          echo "ANDROID_HOME=$HOME/android-sdk" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> "$GITHUB_ENV"
-          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> "$GITHUB_PATH"
-          echo "$HOME/android-sdk/platform-tools" >> "$GITHUB_PATH"
+      # Do not request the retired SDK package named "tools".
+      - name: Configure Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: "platform-tools"
+          accept-android-sdk-licenses: "true"
+          log-accepted-android-sdk-licenses: "false"
 
-      - name: Accept Android licenses and install SDK packages
-        run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.1"
+      # Re-select Java 17 after Android setup.
+      - name: Re-select Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
 
-      - name: Install Godot
+      - name: Verify Java and install Android build packages
+        shell: bash
         run: |
-          mkdir -p "$GITHUB_WORKSPACE/godot-bin"
-          wget -q https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_linux.x86_64.zip -O godot.zip
-          unzip -q godot.zip -d "$GITHUB_WORKSPACE/godot-bin"
-          chmod +x "$GITHUB_WORKSPACE/godot-bin/Godot_v4.4.1-stable_linux.x86_64"
-          echo "$GITHUB_WORKSPACE/godot-bin" >> "$GITHUB_PATH"
+          set -euo pipefail
 
-      - name: Install Godot export templates
-        run: |
-          wget -q https://github.com/godotengine/godot/releases/download/4.4.1-stable/Godot_v4.4.1-stable_export_templates.tpz -O templates.tpz
-          mkdir -p "$HOME/.local/share/godot/export_templates/4.4.1.stable"
-          unzip -q templates.tpz -d templates
-          cp -r templates/templates/. "$HOME/.local/share/godot/export_templates/4.4.1.stable/"
+          echo "JAVA_HOME=$JAVA_HOME"
 
-      - name: Configure Android build environment
+          "$JAVA_HOME/bin/java" -version
+
+          if ! "$JAVA_HOME/bin/java" -version 2>&1 | grep -Eq 'version "17\.|openjdk 17\.'; then
+            echo "::error::JAVA_HOME must point to Java 17."
+            exit 1
+          fi
+
+          SDKMANAGER="$(command -v sdkmanager)"
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          "$SDKMANAGER" --sdk_root="$ANDROID_HOME" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.1" \
+            "cmake;3.10.2.4988404" \
+            "ndk;28.1.13356709"
+
+      - name: Download Godot editor and matching export templates
+        shell: bash
         run: |
-          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> "$GITHUB_ENV"
+          set -euo pipefail
+
+          mkdir -p "$RUNNER_TEMP/godot" "$RUNNER_TEMP/templates"
+
+          curl --fail --location --retry 3 \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+            --output "$RUNNER_TEMP/godot/godot.zip"
+
+          curl --fail --location --retry 3 \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            --output "$RUNNER_TEMP/godot/templates.tpz"
+
+          unzip -q "$RUNNER_TEMP/godot/godot.zip" \
+            -d "$RUNNER_TEMP/godot/bin"
+
+          chmod +x "$RUNNER_TEMP/godot/bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+
+          unzip -q "$RUNNER_TEMP/godot/templates.tpz" \
+            -d "$RUNNER_TEMP/templates"
+
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
+
+          cp -a "$RUNNER_TEMP/templates/templates/." \
+            "$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable/"
+
+          echo "$RUNNER_TEMP/godot/bin" >> "$GITHUB_PATH"
+
+          echo "GODOT_BIN=$RUNNER_TEMP/godot/bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64" >> "$GITHUB_ENV"
+
+      - name: Configure Godot Android paths
+        shell: bash
+        run: |
+          set -euo pipefail
+
           mkdir -p "$HOME/.config/godot"
-          cat > "$HOME/.config/godot/editor_settings-4.tres" <<'EOF'
+
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF_SETTINGS
           [gd_resource type="EditorSettings" format=3]
           [resource]
-          export/android/java_sdk_path = "/usr/lib/jvm/java-17-openjdk-amd64"
-          export/android/android_sdk_path = "/home/runner/android-sdk"
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/java_sdk_path = "$JAVA_HOME"
+          EOF_SETTINGS
+
+      - name: Verify project files and local audio
+        shell: bash
+        run: python3 tools/validate_project.py
+
+      - name: Import Godot resources and parse scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          "$GODOT_BIN" --headless \
+            --editor \
+            --path "$GITHUB_WORKSPACE" \
+            --import \
+            --quit
+
+          "$GODOT_BIN" --headless \
+            --editor \
+            --path "$GITHUB_WORKSPACE" \
+            --quit
+
+      - name: Export debug APK
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p build
+
+          "$GODOT_BIN" --headless \
+            --path "$GITHUB_WORKSPACE" \
+            --export-debug "Android" \
+            build/VelocityRush3D.apk
+
+          test -s build/VelocityRush3D.apk
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velocity-Rush-3D-Android-APK
+          path: build/VelocityRush3D.apk
+          if-no-files-found: error
+          retention-days: 14
