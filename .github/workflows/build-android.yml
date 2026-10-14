@@ -67,6 +67,7 @@ jobs:
           set -Eeuo pipefail
 
           WORK_DIR="$RUNNER_TEMP/godot"
+
           mkdir -p "$WORK_DIR/bin" "$WORK_DIR/templates"
 
           curl -fL --retry 3 \
@@ -89,133 +90,7 @@ jobs:
           fi
 
           chmod +x "$GODOT_BIN"
+
           echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
 
-          TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
-          mkdir -p "$TEMPLATE_DIR"
-
-          if [[ -d "$WORK_DIR/templates/templates" ]]; then
-            cp -a "$WORK_DIR/templates/templates/." "$TEMPLATE_DIR/"
-          else
-            cp -a "$WORK_DIR/templates/." "$TEMPLATE_DIR/"
-          fi
-
-          if [[ ! -f "$TEMPLATE_DIR/android_debug.apk" ]]; then
-            echo "::error::Android export template is missing."
-            find "$TEMPLATE_DIR" -maxdepth 2 -type f
-            exit 1
-          fi
-
-      - name: Create Android debug keystore
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p "$HOME/.android"
-
-          keytool -genkeypair \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey \
-            -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US" \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000
-
-          {
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$HOME/.android/debug.keystore"
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
-          } >> "$GITHUB_ENV"
-
-      - name: Configure Godot Android settings
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
-          mkdir -p "$HOME/.config/godot"
-
-          cat > "$HOME/.config/godot/editor_settings-4.4.tres" <<EOF
-          [gd_resource type="EditorSettings" format=3]
-
-          [resource]
-          export/android/android_sdk_path = "$SDK_ROOT"
-          export/android/java_sdk_path = "$JAVA_HOME"
-          export/android/debug_keystore = "$HOME/.android/debug.keystore"
-          export/android/debug_keystore_user = "androiddebugkey"
-          export/android/debug_keystore_pass = "android"
-          EOF
-
-      - name: Validate project and repair Android export settings
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          test -f project.godot || {
-            echo "::error::project.godot is missing from repository root."
-            exit 1
-          }
-
-          test -f export_presets.cfg || {
-            echo "::error::export_presets.cfg is missing."
-            exit 1
-          }
-
-          grep -Fq 'name="Android"' export_presets.cfg || {
-            echo "::error::Android export preset was not found."
-            exit 1
-          }
-
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-
-          project = Path("project.godot")
-          data = project.read_text(encoding="utf-8")
-          key = "textures/vram_compression/import_etc2_astc"
-
-          pattern = r"^" + re.escape(key) + r"\s*=.*$"
-
-          if re.search(pattern, data, re.MULTILINE):
-              data = re.sub(pattern, key + "=true", data, flags=re.MULTILINE)
-          elif re.search(r"^rendering\s*$", data, re.MULTILINE):
-              data = re.sub(
-                  r"^rendering\s*$",
-                  "[rendering]\n\n" + key + "=true",
-                  data,
-                  count=1,
-                  flags=re.MULTILINE,
-              )
-          else:
-              data = data.rstrip() + "\n\n[rendering]\n\n" + key + "=true\n"
-
-          project.write_text(data, encoding="utf-8")
-          print("Enabled Android ETC2/ASTC texture compression.")
-
-          preset = Path("export_presets.cfg")
-          cfg = preset.read_text(encoding="utf-8")
-
-          if not Path("icon.png").is_file():
-              cfg = re.sub(
-                  r'^launcher_icons/main_192x192=.*$',
-                  'launcher_icons/main_192x192=""',
-                  cfg,
-                  flags=re.MULTILINE,
-              )
-              print("icon.png not found; disabled the optional custom launcher icon.")
-
-          preset.write_text(cfg, encoding="utf-8")
-          print("Android export preset checked.")
-          PY
-
-      - name: Import Godot project
-        shell: bash
-        run: |
-          set -Eeuo pipefail
-
-          mkdir -p build
-
-          "$GODOT_BIN" \
-            --head
+          TEMPLATE
