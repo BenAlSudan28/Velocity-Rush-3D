@@ -1,11 +1,9 @@
-name: Build Velocity Rush 3D APK
+name: Build VELOCITY RUSH 3D Android APK
 
 on:
   workflow_dispatch:
   push:
-    branches:
-      - main
-      - master
+  pull_request:
 
 permissions:
   contents: read
@@ -16,399 +14,227 @@ concurrency:
 
 jobs:
   build-android:
-    name: Build Android APK
+    name: Validate and export Android APK
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 60
 
     env:
       GODOT_VERSION: "4.4.1"
-      PRESET_NAME: "Android"
-      APK_PATH: "build/VelocityRush3D.apk"
+      GODOT_RELEASE: "4.4.1-stable"
 
     steps:
-      # ==========================================
-      # 1. Download project
-      # ==========================================
-      - name: Checkout project
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # ==========================================
-      # 2. Install Java 17
-      # ==========================================
-      - name: Set up Java 17
+      - name: Install Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
-      # ==========================================
-      # 3. FIX ANDROID SDK INSTALLATION
-      # ==========================================
-      - name: Set up Android SDK
+      - name: Set up Android SDK tools
         uses: android-actions/setup-android@v4
         with:
-          cmdline-tools-version: 12266719
           packages: "platform-tools"
-          accept-android-sdk-licenses: "yes"
-          log-accepted-android-sdk-licenses: "false"
+          accept-android-sdk-licenses: true
+          log-accepted-android-sdk-licenses: false
 
-      # ==========================================
-      # 4. Install required Android packages
-      # ==========================================
-      - name: Install Android SDK packages
+      - name: Verify Java 17 and install Android SDK packages
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          echo "========== ANDROID SDK =========="
-          echo "ANDROID_HOME=$ANDROID_HOME"
-          echo "JAVA_HOME=$JAVA_HOME"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          echo "$JAVA_HOME/bin" >> "$GITHUB_PATH"
 
-          echo "========== SDK MANAGER =========="
+          echo "Checking Java version..."
+          java -version 2>&1
 
-          command -v sdkmanager
+          if ! java -version 2>&1 | grep -Eq 'version "17\.|openjdk 17\.'; then
+            echo "::error::Java 17 is required."
+            exit 1
+          fi
 
-          sdkmanager --install \
-            "platforms;android-34" \
-            "build-tools;34.0.0"
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
+          mkdir -p "$SDK_ROOT"
 
-          echo "========== VERIFY SDK =========="
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
 
-          test -d "$ANDROID_HOME/platform-tools"
-          test -d "$ANDROID_HOME/platforms/android-34"
-          test -d "$ANDROID_HOME/build-tools/34.0.0"
+          if ! command -v sdkmanager >/dev/null 2>&1; then
+            echo "::error::sdkmanager was not found."
+            exit 1
+          fi
 
-          java -version
-          adb version
+          sdkmanager --sdk_root="$SDK_ROOT" --install \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.1" \
+            "cmdline-tools;latest" \
+            "cmake;3.10.2.4988404" \
+            "ndk;28.1.13356709"
 
-          echo "Android SDK installation completed."
-
-      # ==========================================
-      # 5. Download Godot 4.4.1
-      # ==========================================
-      - name: Download Godot Engine
+      - name: Download Godot 4.4.1 and export templates
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          mkdir -p godot-bin
+          WORK_DIR="$RUNNER_TEMP/godot-download"
+          mkdir -p "$WORK_DIR/bin" "$WORK_DIR/templates"
 
-          GODOT_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip"
+          curl --fail --show-error --location \
+            --retry 3 --retry-all-errors \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_linux.x86_64.zip" \
+            --output "$WORK_DIR/godot.zip"
 
-          curl -fL --retry 3 \
-            "$GODOT_URL" \
-            -o godot-bin/godot.zip
+          curl --fail --show-error --location \
+            --retry 3 --retry-all-errors \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_RELEASE}/Godot_v${GODOT_VERSION}-stable_export_templates.tpz" \
+            --output "$WORK_DIR/templates.tpz"
 
-          unzip -o godot-bin/godot.zip -d godot-bin
+          unzip -q "$WORK_DIR/godot.zip" -d "$WORK_DIR/bin"
+          unzip -q "$WORK_DIR/templates.tpz" -d "$WORK_DIR/templates"
 
-          GODOT_BIN="./godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          GODOT_BIN="$WORK_DIR/bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
 
-          if [ ! -f "$GODOT_BIN" ]; then
-            echo "::error::Godot executable not found."
-            find godot-bin -maxdepth 3 -type f
+          if [[ ! -f "$GODOT_BIN" ]]; then
+            echo "::error::Godot executable was not found."
+            find "$WORK_DIR/bin" -maxdepth 3 -type f -print
             exit 1
           fi
 
           chmod +x "$GODOT_BIN"
-
-          "$GODOT_BIN" --version
-
-      # ==========================================
-      # 6. Install matching export templates
-      # ==========================================
-      - name: Install Godot export templates
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          TEMPLATE_URL="https://github.com/godotengine/godot/releases/download/${GODOT_VERSION}-stable/Godot_v${GODOT_VERSION}-stable_export_templates.tpz"
-
-          mkdir -p godot-bin/templates
-
-          curl -fL --retry 3 \
-            "$TEMPLATE_URL" \
-            -o godot-bin/templates/export_templates.tpz
-
-          unzip -o \
-            godot-bin/templates/export_templates.tpz \
-            -d godot-bin/templates/extracted
-
-          SOURCE_DIR="godot-bin/templates/extracted/templates"
+          echo "GODOT_BIN=$GODOT_BIN" >> "$GITHUB_ENV"
 
           TEMPLATE_DIR="$HOME/.local/share/godot/export_templates/${GODOT_VERSION}.stable"
-
-          if [ ! -d "$SOURCE_DIR" ]; then
-            echo "::error::Export templates not found."
-            find godot-bin/templates -maxdepth 4 -type f
-            exit 1
-          fi
-
           mkdir -p "$TEMPLATE_DIR"
 
-          cp -a "$SOURCE_DIR/." "$TEMPLATE_DIR/"
+          if [[ -d "$WORK_DIR/templates/templates" ]]; then
+            cp -a "$WORK_DIR/templates/templates/." "$TEMPLATE_DIR/"
+          else
+            cp -a "$WORK_DIR/templates/." "$TEMPLATE_DIR/"
+          fi
 
-          echo "Godot export templates installed:"
-          ls -la "$TEMPLATE_DIR"
-
-      # ==========================================
-      # 7. Verify project files
-      # ==========================================
-      - name: Verify project files
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if [ ! -f project.godot ]; then
-            echo "::error::project.godot not found."
+          if [[ ! -f "$TEMPLATE_DIR/android_debug.apk" ]]; then
+            echo "::error::Godot Android debug export template is missing."
+            find "$TEMPLATE_DIR" -maxdepth 2 -type f -print
             exit 1
           fi
 
-          if [ ! -f export_presets.cfg ]; then
-            echo "::error::export_presets.cfg not found."
-            exit 1
-          fi
-
-          echo "========== PROJECT ROOT =========="
-          ls -la
-
-          echo "========== EXPORT PRESET =========="
-          cat export_presets.cfg
-
-      # ==========================================
-      # 8. Repair Android export preset
-      # ==========================================
-      - name: Repair Android export preset
+      - name: Configure Godot Android SDK paths
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          path = Path("export_presets.cfg")
-          text = path.read_text(encoding="utf-8")
-
-          sections = re.split(r'(?=^\[)', text, flags=re.M)
-
-          found = False
-          output = []
-
-          for section in sections:
-              lines = section.splitlines()
-
-              if lines and lines[0].strip() == "[preset.0]":
-                  found = True
-
-                  section = re.sub(
-                      r'(?m)^gradle_build/min_sdk=.*(?:\n|$)',
-                      '',
-                      section
-                  )
-
-                  section = re.sub(
-                      r'(?m)^gradle_build/target_sdk=.*(?:\n|$)',
-                      '',
-                      section
-                  )
-
-                  section = re.sub(
-                      r'(?m)^gradle_build/use_gradle_build=.*$',
-                      'gradle_build/use_gradle_build=false',
-                      section
-                  )
-
-              output.append(section)
-
-          if not found:
-              raise SystemExit(
-                  "ERROR: Android preset [preset.0] not found."
-              )
-
-          path.write_text(
-              ''.join(output),
-              encoding="utf-8"
-          )
-
-          print("Android export preset repaired.")
-          PY
-
-          echo "========== UPDATED CFG =========="
-          cat export_presets.cfg
-
-      # ==========================================
-      # 9. Validate launcher icon
-      # ==========================================
-      - name: Validate Android launcher icon
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          cfg = Path("export_presets.cfg")
-          text = cfg.read_text(encoding="utf-8")
-
-          icon = Path("icon.png")
-
-          if icon.is_file():
-              print("Project icon found.")
-              print("Size:", icon.stat().st_size, "bytes")
-          else:
-              print("WARNING: icon.png not found in project root.")
-              print("Clearing explicit launcher icon override.")
-
-              text = re.sub(
-                  r'(?m)^launcher_icons/main_192x192=.*$',
-                  'launcher_icons/main_192x192=""',
-                  text
-              )
-
-              cfg.write_text(text, encoding="utf-8")
-
-          print("Icon validation completed.")
-          PY
-
-      # ==========================================
-      # 10. Configure Godot SDK paths
-      # ==========================================
-      - name: Configure Godot Android paths
-        shell: bash
-        run: |
-          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/.android/sdk}}"
 
           mkdir -p "$HOME/.config/godot"
 
-          cat > "$HOME/.config/godot/editor_settings-4.4.tres" <<EOF
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF_SETTINGS
           [gd_resource type="EditorSettings" format=3]
 
           [resource]
-          export/android/android_sdk_path = "$ANDROID_HOME"
+          export/android/android_sdk_path = "$SDK_ROOT"
           export/android/java_sdk_path = "$JAVA_HOME"
-          EOF
+          EOF_SETTINGS
 
-          cp \
-            "$HOME/.config/godot/editor_settings-4.4.tres" \
-            "$HOME/.config/godot/editor_settings-4.tres"
-
-          echo "Godot SDK paths configured."
-
-      # ==========================================
-      # 11. Create Android debug keystore
-      # ==========================================
-      - name: Prepare Android build
+      - name: Validate project files
         shell: bash
         run: |
-          set -euo pipefail
+          set -Eeuo pipefail
 
-          mkdir -p build
+          test -f project.godot || {
+            echo "::error::project.godot was not found in the repository root."
+            exit 1
+          }
 
-          KEYSTORE="$RUNNER_TEMP/velocity-debug.keystore"
+          test -f export_presets.cfg || {
+            echo "::error::export_presets.cfg was not found."
+            exit 1
+          }
 
-          keytool -genkeypair \
-            -v \
-            -keystore "$KEYSTORE" \
-            -storepass android \
-            -keypass android \
-            -alias androiddebugkey \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -dname "CN=Android Debug,O=Android,C=US"
+          test -f tools/validate_project.py || {
+            echo "::error::tools/validate_project.py was not found."
+            exit 1
+          }
 
-          test -s "$KEYSTORE"
+          if ! grep -Fq 'name="Android"' export_presets.cfg; then
+            echo "::error::An Android export preset named Android is required."
+            exit 1
+          fi
 
-          {
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=$KEYSTORE"
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_USER=androiddebugkey"
-            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD=android"
-          } >> "$GITHUB_ENV"
+          echo "Android export preset found."
 
-          echo "Android debug keystore configured."
+          python3 tools/validate_project.py
 
-      # ==========================================
-      # 12. Import project resources
-      # ==========================================
-      - name: Import Godot project
+      - name: Import resources and check Godot project
         shell: bash
         run: |
-          set -uo pipefail
+          set -Eeuo pipefail
 
-          GODOT_BIN="./godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
+          "$GODOT_BIN" --version
 
           "$GODOT_BIN" \
             --headless \
             --editor \
             --path "$GITHUB_WORKSPACE" \
-            --verbose \
-            --quit \
-            2>&1 | tee build/import.log
+            --import \
+            --quit
 
-          RESULT=${PIPESTATUS[0]}
+          "$GODOT_BIN" \
+            --headless \
+            --editor \
+            --path "$GITHUB_WORKSPACE" \
+            --quit
 
-          if [ "$RESULT" -ne 0 ]; then
-            echo "::error::Godot import failed."
-            exit "$RESULT"
-          fi
-
-      # ==========================================
-      # 13. Export APK
-      # ==========================================
-      - name: Export debug APK
+      - name: Export Android debug APK
         shell: bash
         run: |
           set -Eeuo pipefail
 
-          GODOT_BIN="./godot-bin/Godot_v${GODOT_VERSION}-stable_linux.x86_64"
-          LOG_PATH="build/export.log"
-
           mkdir -p build
-          rm -f "$APK_PATH" "$LOG_PATH"
-
-          echo "========== GODOT VERSION =========="
-          "$GODOT_BIN" --version
-
-          echo "========== ANDROID SDK =========="
-          echo "$ANDROID_HOME"
-
-          echo "========== JAVA =========="
-          echo "$JAVA_HOME"
-
-          echo "========== SIGNING =========="
-          test -s "$GODOT_ANDROID_KEYSTORE_DEBUG_PATH"
-
-          echo "========== EXPORT PRESET =========="
-          cat export_presets.cfg
-
-          echo "========== EXPORTING APK =========="
-
-          set +e
 
           "$GODOT_BIN" \
             --headless \
             --path "$GITHUB_WORKSPACE" \
-            --verbose \
-            --export-debug "$PRESET_NAME" "$APK_PATH" \
-            2>&1 | tee "$LOG_PATH"
+            --export-debug "Android" \
+            "$GITHUB_WORKSPACE/build/VelocityRush3D.apk"
 
-          RESULT=${PIPESTATUS[0]}
-
-          set -e
-
-          echo "========== EXPORT ERROR DETAILS =========="
-
-          grep -ni -B 8 -A 12 -E \
-            'configuration errors|ERROR:|keystore|icon|template|Android SDK|Java SDK|failed|invalid|missing|required' \
-            "$LOG_PATH" || true
-
-          if [ "$RESULT" -ne 0 ] || [ ! -s "$APK_PATH" ]; then
-            echo "::error::APK export failed."
+          if [[ ! -s "$GITHUB_WORKSPACE/build/VelocityRush3D.apk" ]]; then
+            echo "::error::Godot did not create a valid APK file."
             exit 1
           fi
 
-          echo "APK created successfully."
-          ls -lh "$APK_PATH"
+          echo "APK export completed."
 
-      # =========================================
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+
+          APK="$GITHUB_WORKSPACE/build/VelocityRush3D.apk"
+
+          test -s "$APK"
+
+          echo "APK file information:"
+          ls -lh "$APK"
+          file "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velocity-Rush-3D-Android-APK
+          path: build/VelocityRush3D.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload diagnostic logs if available
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Velocity-Rush-3D-Build-Logs
+          path: |
+            .godot/
+            build/
+          if-no-files-found: ignore
+          retention-days: 7
