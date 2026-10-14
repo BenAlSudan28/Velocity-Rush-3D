@@ -30,14 +30,30 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Configure Android SDK
-        uses: android-actions/setup-android@v3
-
-      - name: Install Android platform and build tools
+      - name: Locate Android SDK and install required packages
         shell: bash
         run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-34" "platforms;android-35" "build-tools;34.0.0" "build-tools;35.0.1"
+          set -eo pipefail
+          SDK_DIR="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -d "$SDK_DIR" ]; then
+            echo "ERROR: Android SDK not found at $SDK_DIR"
+            exit 1
+          fi
+          echo "ANDROID_HOME=$SDK_DIR" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_DIR" >> "$GITHUB_ENV"
+          SDKMANAGER=""
+          for c in "$SDK_DIR/cmdline-tools/latest/bin/sdkmanager" "$SDK_DIR"/cmdline-tools/*/bin/sdkmanager; do
+            if [ -x "$c" ]; then SDKMANAGER="$c"; break; fi
+          done
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$(command -v sdkmanager || true)"; fi
+          echo "Android SDK: $SDK_DIR"
+          echo "sdkmanager: ${SDKMANAGER:-not found}"
+          if [ -n "$SDKMANAGER" ]; then
+            yes | "$SDKMANAGER" --sdk_root="$SDK_DIR" --licenses >/dev/null 2>&1 || true
+            "$SDKMANAGER" --sdk_root="$SDK_DIR" "platform-tools" "platforms;android-34" "build-tools;34.0.0" "build-tools;35.0.1" \
+              || echo "WARNING: package install failed, using preinstalled packages"
+          fi
+          ls "$SDK_DIR/build-tools" || { echo "ERROR: no build-tools found"; exit 1; }
 
       - name: Download Godot editor and matching export templates
         shell: bash
@@ -105,8 +121,6 @@ jobs:
             grep -n '^name=' "$CFG" || true
             exit 1
           fi
-          # Without Gradle build, Godot refuses any custom Min/Target SDK.
-          # Disable Gradle and clear both values so the template defaults are used.
           sed -i -E 's|^gradle_build/use_gradle_build=.*|gradle_build/use_gradle_build=false|' "$CFG"
           sed -i -E 's|^gradle_build/min_sdk=.*|gradle_build/min_sdk=""|' "$CFG"
           sed -i -E 's|^gradle_build/target_sdk=.*|gradle_build/target_sdk=""|' "$CFG"
@@ -126,7 +140,6 @@ jobs:
         shell: bash
         run: |
           set -uo pipefail
-          # Godot can return a non-zero code on quit in headless mode even when import worked.
           "$GODOT_BIN" --headless --path "$GITHUB_WORKSPACE" --import || true
           test -d "$GITHUB_WORKSPACE/.godot" || { echo "ERROR: import did not create .godot folder"; exit 1; }
 
