@@ -19,7 +19,7 @@ func build_menu(world: Node3D) -> void:
 
 func build_track(world: Node3D) -> Dictionary:
     _rng.seed = 671923
-    _add_ground(world, 430.0, Color(0.045, 0.095, 0.074))
+    _add_ground(world, 430.0, Color(0.34, 0.49, 0.30))
     # A closed, smooth circuit. The start point is on the eastern straight,
     # with the first segment heading toward -Z to match the car's forward axis.
     var controls: Array[Vector2] = [
@@ -36,7 +36,12 @@ func build_track(world: Node3D) -> Dictionary:
     _add_city_along_track(world, centreline)
     _build_skyline(world, false)
     _add_start_gate(world, centreline[0])
-    return {"start_position": Vector3(centreline[0].x, 0.02, centreline[0].z), "track_length": _measure_path(centreline), "target_distance": 850.0}
+    return {
+        "start_position": Vector3(centreline[0].x, 0.02, centreline[0].z),
+        "track_length": _measure_path(centreline),
+        "target_distance": 850.0,
+        "centreline": centreline
+    }
 
 func _smooth_loop(points: Array[Vector2], steps: int) -> Array[Vector3]:
     var output: Array[Vector3] = []
@@ -55,7 +60,7 @@ func _smooth_loop(points: Array[Vector2], steps: int) -> Array[Vector3]:
     return output
 
 func _create_road(world: Node3D, points: Array[Vector3], width: float) -> void:
-    var road_mat := _mat(Color(0.075, 0.085, 0.105), 0.03, 0.88)
+    var road_mat := _mat(Color(0.24, 0.26, 0.30), 0.02, 0.84)
     # Procedural road winding can vary around tight curves; disable back-face culling
     # so the asphalt remains visible even if a triangle winding is reversed.
     road_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -107,8 +112,8 @@ func _create_road(world: Node3D, points: Array[Vector3], width: float) -> void:
     road_body.add_child(shape)
 
 func _add_track_markings(world: Node3D, points: Array[Vector3]) -> void:
-    var dash_mat := _mat(Color(0.94, 0.79, 0.43), 0.1, 0.55, true)
-    var edge_mat := _mat(Color(0.81, 0.89, 0.92), 0.08, 0.54)
+    var dash_mat := _mat(Color(1.0, 0.91, 0.55), 0.05, 0.48, true)
+    var edge_mat := _mat(Color(0.97, 0.98, 1.0), 0.03, 0.48)
     for i in range(0, points.size(), 5):
         var a: Vector3 = points[i]
         var b: Vector3 = points[(i + 1) % points.size()]
@@ -176,11 +181,11 @@ func _add_barriers(world: Node3D, points: Array[Vector3], width: float) -> void:
                 barrier.add_child(post)
 
 func _add_city_along_track(world: Node3D, points: Array[Vector3]) -> void:
-    var building_colors: Array[Color] = [Color("#243345"), Color("#374451"), Color("#434454"), Color("#344f56"), Color("#56444a"), Color("#3c4b62")]
-    var window_mat := _mat(Color(0.17, 0.69, 0.79), 0.42, 0.23, true)
-    var shop_sign := _mat(Color(1.0, 0.39, 0.12), 0.15, 0.35, true)
+    var building_colors: Array[Color] = [Color("#d9e3ea"), Color("#b8ccd9"), Color("#e8d3bd"), Color("#b8d2c8"), Color("#d8c5d4"), Color("#c5d0e3")]
+    var window_mat := _mat(Color(0.08, 0.63, 0.88), 0.18, 0.25, true)
+    var shop_sign := _mat(Color(1.0, 0.48, 0.12), 0.08, 0.35, true)
     var tree_trunk := _mat(Color(0.19, 0.105, 0.065), 0.0, 0.9)
-    var tree_leaf := _mat(Color(0.075, 0.27, 0.17), 0.03, 0.82)
+    var tree_leaf := _mat(Color(0.13, 0.43, 0.19), 0.02, 0.78)
     var lamp_mat := _mat(Color(0.33, 0.40, 0.46), 0.67, 0.3)
     var lamp_light := _mat(Color(0.84, 0.94, 1.0), 0.1, 0.3, true)
     # Sample more frequently and base decoration spacing on the sample index,
@@ -238,7 +243,7 @@ func _add_city_along_track(world: Node3D, points: Array[Vector3]) -> void:
         _add_parked_car(world, parked, atan2(-direction.x, -direction.z), Color.from_string(["#dce4eb", "#1ca6a9", "#9d263d", "#d3a63b"][i % 4], Color.WHITE))
 
 func _build_skyline(world: Node3D, menu: bool) -> void:
-    var palette: Array[Color] = [Color("#101d2b"), Color("#172739"), Color("#1c3040"), Color("#18242f"), Color("#253544")]
+    var palette: Array[Color] = [Color("#9fb9cf"), Color("#b8cad8"), Color("#8fa9bd"), Color("#c2cfda"), Color("#9bb6c0")]
     var start_z := -68.0 if menu else -125.0
     var count := 30 if menu else 42
     for i in range(count):

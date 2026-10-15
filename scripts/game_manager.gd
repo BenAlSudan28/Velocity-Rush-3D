@@ -17,6 +17,7 @@ var menu_camera: Camera3D
 var world_light: DirectionalLight3D
 var menu_car: Node3D
 var player_car: CharacterBody3D
+var ai_opponents: Array[CharacterBody3D] = []
 var camera_rig: Node3D
 var race_manager: Node
 var hud: Control
@@ -39,18 +40,27 @@ func _setup_world() -> void:
     var world_environment := WorldEnvironment.new()
     world_environment.name = "WorldLighting"
     var env := Environment.new()
-    env.background_mode = Environment.BG_COLOR
-    env.background_color = Color(0.018, 0.033, 0.055)
+    env.background_mode = Environment.BG_SKY
+    var sky := Sky.new()
+    var sky_material := ProceduralSkyMaterial.new()
+    sky_material.sky_top_color = Color(0.12, 0.42, 0.82)
+    sky_material.sky_horizon_color = Color(0.68, 0.83, 0.96)
+    sky_material.ground_bottom_color = Color(0.40, 0.48, 0.35)
+    sky_material.ground_horizon_color = Color(0.72, 0.79, 0.69)
+    sky_material.sun_angle_max = 18.0
+    sky.sky_material = sky_material
+    env.sky = sky
     env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-    env.ambient_light_color = Color(0.47, 0.57, 0.67)
-    env.ambient_light_energy = 0.72
+    env.ambient_light_color = Color(0.70, 0.79, 0.90)
+    env.ambient_light_energy = 1.15
     env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
     world_environment.environment = env
     add_child(world_environment)
     world_light = DirectionalLight3D.new()
     world_light.name = "KeySunlight"
-    world_light.rotation_degrees = Vector3(-48.0, -28.0, 0.0)
-    world_light.light_energy = 1.28
+    world_light.rotation_degrees = Vector3(-52.0, -32.0, 0.0)
+    world_light.light_color = Color(1.0, 0.96, 0.87)
+    world_light.light_energy = 1.55
     world_light.shadow_enabled = true
     world_light.directional_shadow_max_distance = 90.0
     add_child(world_light)
@@ -111,12 +121,12 @@ func _show_main_menu() -> void:
     content.add_theme_constant_override("separation", 9)
     panel.add_child(content)
     content.add_child(_label("VELOCITY RUSH 3D", 38, Color(0.96, 0.98, 1.0), HORIZONTAL_ALIGNMENT_LEFT))
-    content.add_child(_label("SUPER STAR RACING EXPERIENCE", 13, Color(0.12, 0.82, 0.90), HORIZONTAL_ALIGNMENT_LEFT))
+    content.add_child(_label("DAYLIGHT CITY • LIVE RACING", 13, Color(0.12, 0.82, 0.90), HORIZONTAL_ALIGNMENT_LEFT))
     var line := ColorRect.new()
     line.custom_minimum_size = Vector2(0, 3)
     line.color = Color(0.06, 0.75, 0.84)
     content.add_child(line)
-    content.add_child(_label("FEEL THE LINE.\nOWN THE NIGHT.", 22, Color(0.79, 0.86, 0.91), HORIZONTAL_ALIGNMENT_LEFT))
+    content.add_child(_label("CHASE THE SUN.\nOWN THE ROAD.", 22, Color(0.88, 0.92, 0.96), HORIZONTAL_ALIGNMENT_LEFT))
     content.add_child(_label("Choose your experience", 13, Color(0.48, 0.61, 0.70), HORIZONTAL_ALIGNMENT_LEFT))
     var race_button := _menu_button("01   RACE MODE", true)
     race_button.pressed.connect(func(): _start_game("race"))
@@ -125,7 +135,8 @@ func _show_main_menu() -> void:
     free_button.pressed.connect(func(): _start_game("free_drive"))
     content.add_child(free_button)
     var garage_button := _menu_button("03   CAR GARAGE", false)
-    garage_button.pressed.connect(_show_garage)
+    # Defer scene/UI teardown until Godot has finished dispatching the button event.
+    garage_button.pressed.connect(func(): call_deferred("_show_garage"))
     content.add_child(garage_button)
     var settings_button := _menu_button("04   SETTINGS", false)
     settings_button.pressed.connect(_show_settings)
@@ -287,12 +298,34 @@ func _start_game(mode: String) -> void:
     track.name = "RaceTrack"
     world_root.add_child(track)
     var track_config: Dictionary = track.get("track_config")
+    var centreline: Array = track_config.get("centreline", [])
+    ai_opponents.clear()
     player_car = CarScene.instantiate() as CharacterBody3D
     player_car.set("preview_mode", false)
     player_car.call("configure", selected_car)
     player_car.position = track_config.get("start_position", Vector3(0, 0.02, 7.5))
     player_car.rotation.y = 0.0
     world_root.add_child(player_car)
+    if mode == "race" and not centreline.is_empty():
+        var grid_offsets: Array[Vector2] = [Vector2(-3.0, 0.0), Vector2(3.0, 0.0), Vector2(-3.0, 4.4), Vector2(3.0, 4.4)]
+        var car_choices: Array[int] = [1, 2, 3, 4]
+        var speeds: Array[float] = [138.0, 126.0, 145.0, 132.0]
+        for index in range(grid_offsets.size()):
+            var opponent := CarScene.instantiate() as CharacterBody3D
+            opponent.name = "Rival_%02d" % (index + 1)
+            opponent.set("preview_mode", false)
+            opponent.call("configure", car_choices[index] % 6)
+            var grid_start: Vector3 = track_config.get("start_position", Vector3.ZERO)
+            opponent.position = Vector3(
+                grid_start.x + grid_offsets[index].x,
+                0.02,
+                grid_start.z + grid_offsets[index].y
+            )
+            opponent.rotation.y = 0.0
+            world_root.add_child(opponent)
+            opponent.call("setup_ai", centreline, speeds[index])
+            opponent.call("set_ai_active", false)
+            ai_opponents.append(opponent)
     camera_rig = CameraController.new()
     camera_rig.call("set_target", player_car)
     world_root.add_child(camera_rig)
@@ -301,8 +334,9 @@ func _start_game(mode: String) -> void:
     race_manager.name = "RaceSession"
     add_child(race_manager)
     var target_distance := float(track_config.get("target_distance", 850.0))
-    race_manager.call("setup", player_car, mode, target_distance)
     race_manager.connect("race_finished", _on_race_finished)
+    race_manager.connect("race_started", _start_ai_opponents)
+    race_manager.call("setup", player_car, mode, target_distance)
     hud = HudSceneScript.new()
     hud.name = "DrivingHUD"
     hud.call("setup", player_car, race_manager, mode)
@@ -313,9 +347,19 @@ func _start_game(mode: String) -> void:
     if mode == "free_drive":
         player_car.set("input_enabled", true)
 
+func _start_ai_opponents() -> void:
+    if current_screen != "race":
+        return
+    for opponent in ai_opponents:
+        if is_instance_valid(opponent):
+            opponent.call("set_ai_active", true)
+
 func _on_race_finished(results: Dictionary) -> void:
     if current_screen != "race":
         return
+    for opponent in ai_opponents:
+        if is_instance_valid(opponent):
+            opponent.call("set_ai_active", false)
     _active_results = results.duplicate(true)
     current_screen = "results"
     AudioManager.engine_active(false)
@@ -424,16 +468,18 @@ func _apply_graphics_setting() -> void:
     SettingsManager.apply_graphics(get_viewport(), str(SaveManager.setting("graphics_quality", "high")), world_light)
 
 func _clear_ui() -> void:
+    # Never free a Control immediately while its pressed/input signal is executing.
     for child in ui_root.get_children():
+        # Queue while it is still in the SceneTree, then detach it immediately.
+        child.queue_free()
         ui_root.remove_child(child)
-        child.free()
     _sound_button = null
 
 func _clear_world() -> void:
     menu_car = null
     for child in world_root.get_children():
+        child.queue_free()
         world_root.remove_child(child)
-        child.free()
 
 func _add_dark_overlay(alpha: float) -> void:
     var overlay := ColorRect.new()

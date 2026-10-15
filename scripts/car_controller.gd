@@ -17,6 +17,13 @@ var input_throttle: float = 0.0
 var input_brake: float = 0.0
 var input_nitro: bool = false
 var input_enabled: bool = true
+var ai_controlled: bool = false
+var ai_active: bool = false
+var ai_path: Array[Vector3] = []
+var ai_target_speed_kmh: float = 132.0
+var _ai_repath_timer: float = 0.0
+var _ai_target_index: int = 0
+var nitro_charge: float = 100.0
 var speed_mps: float = 0.0
 var rpm: float = 900.0
 var distance_travelled: float = 0.0
@@ -174,7 +181,67 @@ func set_inputs(steer: float, throttle: float, brake: float, nitro: bool = false
     input_steer = clampf(steer, -1.0, 1.0) if input_enabled else 0.0
     input_throttle = clampf(throttle, 0.0, 1.0) if input_enabled else 0.0
     input_brake = clampf(brake, 0.0, 1.0) if input_enabled else 0.0
-    input_nitro = nitro and input_enabled
+    input_nitro = nitro and input_enabled and nitro_charge > 0.5
+
+func setup_ai(path_points: Array, target_speed_kmh: float = 132.0) -> void:
+    ai_controlled = true
+    ai_active = false
+    ai_path.clear()
+    for point in path_points:
+        if point is Vector3:
+            ai_path.append(point)
+    ai_target_speed_kmh = clampf(target_speed_kmh, 85.0, 175.0)
+    _ai_repath_timer = 0.0
+    if not ai_path.is_empty():
+        _ai_target_index = _find_nearest_path_index()
+
+func set_ai_active(active: bool) -> void:
+    ai_active = active
+    input_enabled = active
+    if not active:
+        input_steer = 0.0
+        input_throttle = 0.0
+        input_brake = 0.0
+        input_nitro = false
+
+func _find_nearest_path_index() -> int:
+    if ai_path.is_empty():
+        return 0
+    var nearest_index: int = 0
+    var nearest_distance: float = INF
+    for index in range(ai_path.size()):
+        var distance := global_position.distance_squared_to(ai_path[index])
+        if distance < nearest_distance:
+            nearest_distance = distance
+            nearest_index = index
+    return nearest_index
+
+func _update_ai_inputs(delta: float) -> void:
+    if ai_path.size() < 4:
+        input_steer = 0.0
+        input_throttle = 1.0
+        input_brake = 0.0
+        return
+    _ai_repath_timer -= delta
+    if _ai_repath_timer <= 0.0:
+        var nearest := _find_nearest_path_index()
+        _ai_target_index = (nearest + 5) % ai_path.size()
+        _ai_repath_timer = 0.18
+    var target_point: Vector3 = ai_path[_ai_target_index]
+    var desired := target_point - global_position
+    desired.y = 0.0
+    if desired.length_squared() > 0.01:
+        desired = desired.normalized()
+        var right_component := global_transform.basis.x.dot(desired)
+        input_steer = clampf(right_component * 2.4, -1.0, 1.0)
+    else:
+        input_steer = 0.0
+    input_throttle = 1.0
+    input_brake = 0.0
+    input_nitro = false
+
+func get_nitro_percentage() -> float:
+    return clampf(nitro_charge, 0.0, 100.0)
 
 func get_speed_kmh() -> float:
     return absf(speed_mps) * 3.6
@@ -188,12 +255,29 @@ func get_cockpit_anchor() -> Node3D:
 func _physics_process(delta: float) -> void:
     if preview_mode:
         return
+    if ai_controlled:
+        if ai_active and input_enabled:
+            _update_ai_inputs(delta)
+        else:
+            input_steer = 0.0
+            input_throttle = 0.0
+            input_brake = 0.0
+            input_nitro = false
     _collision_cooldown = maxf(0.0, _collision_cooldown - delta)
     var max_speed := float(stats["max_speed"]) / 3.6
     var acceleration := float(stats["acceleration"])
-    if input_nitro:
-        max_speed *= 1.13
-        acceleration *= 1.55
+    if ai_controlled:
+        max_speed = minf(max_speed, ai_target_speed_kmh / 3.6)
+        if absf(input_steer) > 0.78:
+            max_speed *= 0.78
+    if input_nitro and nitro_charge > 0.0:
+        max_speed *= 1.20
+        acceleration *= 1.9
+        nitro_charge = maxf(0.0, nitro_charge - 32.0 * delta)
+        if nitro_charge <= 0.0:
+            input_nitro = false
+    else:
+        nitro_charge = minf(100.0, nitro_charge + 8.5 * delta)
     if input_brake > 0.01:
         speed_mps = move_toward(speed_mps, 0.0, float(stats["braking"]) * input_brake * delta)
     elif input_throttle > 0.01:
@@ -223,6 +307,7 @@ func _physics_process(delta: float) -> void:
 
 func reset_stats() -> void:
     speed_mps = 0.0
+    nitro_charge = 100.0
     rpm = 850.0
     distance_travelled = 0.0
     max_speed_seen = 0.0
