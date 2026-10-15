@@ -23,7 +23,7 @@ func _gui_input(event: InputEvent) -> void:
             _dragging = false
             accept_event()
     elif event is InputEventScreenDrag and _dragging:
-        var delta_x := event.position.x - _last_x
+        var delta_x: float = event.position.x - _last_x
         _last_x = event.position.x
         steering_value = clampf(steering_value + delta_x / 88.0 * sensitivity, -1.0, 1.0)
         _visual_angle = steering_value * 2.25
@@ -36,7 +36,7 @@ func _gui_input(event: InputEvent) -> void:
             _last_x = event.position.x
         accept_event()
     elif event is InputEventMouseMotion and _dragging:
-        var movement := event.position.x - _last_x
+        var movement: float = event.position.x - _last_x
         _last_x = event.position.x
         steering_value = clampf(steering_value + movement / 88.0 * sensitivity, -1.0, 1.0)
         _visual_angle = steering_value * 2.25
