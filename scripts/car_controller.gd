@@ -3,7 +3,10 @@ extends CharacterBody3D
 const CAR_SPECS: Array[Dictionary] = [
     {"name": "AERION GT-R", "class": "SUPER SPORT", "max_speed": 318.0, "acceleration": 20.5, "braking": 38.0, "steering": 1.62, "width": 1.92, "length": 4.42, "color": "#e52d47", "roof": 1.17, "spoiler": true},
     {"name": "VORTEX SV-X", "class": "HYPER SPORT", "max_speed": 352.0, "acceleration": 24.0, "braking": 41.0, "steering": 1.48, "width": 2.02, "length": 4.58, "color": "#f1b92e", "roof": 1.13, "spoiler": true},
-    {"name": "TERRA RALLY S", "class": "SPORT TOURER", "max_speed": 286.0, "acceleration": 18.0, "braking": 36.0, "steering": 1.78, "width": 1.96, "length": 4.65, "color": "#23b9c6", "roof": 1.31, "spoiler": false}
+    {"name": "TERRA RALLY S", "class": "SPORT TOURER", "max_speed": 286.0, "acceleration": 18.0, "braking": 36.0, "steering": 1.78, "width": 1.96, "length": 4.65, "color": "#23b9c6", "roof": 1.31, "spoiler": false},
+    {"name": "SCARLET V12", "class": "GRAND TOURER", "max_speed": 329.0, "acceleration": 21.8, "braking": 39.0, "steering": 1.56, "width": 1.98, "length": 4.55, "color": "#c51f35", "roof": 1.10, "spoiler": false},
+    {"name": "NIGHTFALL X", "class": "HYPER COUPE", "max_speed": 361.0, "acceleration": 25.2, "braking": 42.0, "steering": 1.44, "width": 2.04, "length": 4.62, "color": "#7b4dff", "roof": 1.08, "spoiler": true},
+    {"name": "APEX R SPORT", "class": "TRACK SPECIAL", "max_speed": 304.0, "acceleration": 19.7, "braking": 43.0, "steering": 1.86, "width": 1.90, "length": 4.38, "color": "#d9e3ea", "roof": 1.14, "spoiler": true}
 ]
 
 @export var preview_mode: bool = false

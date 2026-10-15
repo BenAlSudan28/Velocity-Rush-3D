@@ -20,10 +20,13 @@ func build_menu(world: Node3D) -> void:
 func build_track(world: Node3D) -> Dictionary:
     _rng.seed = 671923
     _add_ground(world, 430.0, Color(0.045, 0.095, 0.074))
+    # A closed, smooth circuit. The start point is on the eastern straight,
+    # with the first segment heading toward -Z to match the car's forward axis.
     var controls: Array[Vector2] = [
-        Vector2(0, 13), Vector2(0, -43), Vector2(15, -70), Vector2(48, -78),
-        Vector2(77, -60), Vector2(90, -30), Vector2(82, 4), Vector2(60, 28),
-        Vector2(28, 38), Vector2(-4, 27), Vector2(-24, 5), Vector2(-18, -20), Vector2(-8, -25)
+        Vector2(50, -20), Vector2(50, -45), Vector2(28, -65),
+        Vector2(0, -70), Vector2(-30, -60), Vector2(-50, -35),
+        Vector2(-55, -5), Vector2(-45, 25), Vector2(-20, 40),
+        Vector2(10, 40), Vector2(35, 25), Vector2(50, 0)
     ]
     var centreline := _smooth_loop(controls, 9)
     _create_ground_collision(world)
@@ -33,7 +36,7 @@ func build_track(world: Node3D) -> Dictionary:
     _add_city_along_track(world, centreline)
     _build_skyline(world, false)
     _add_start_gate(world, centreline[0])
-    return {"start_position": Vector3(0.0, 0.02, 7.5), "track_length": _measure_path(centreline), "target_distance": 850.0}
+    return {"start_position": Vector3(centreline[0].x, 0.02, centreline[0].z), "track_length": _measure_path(centreline), "target_distance": 850.0}
 
 func _smooth_loop(points: Array[Vector2], steps: int) -> Array[Vector3]:
     var output: Array[Vector3] = []
@@ -53,6 +56,9 @@ func _smooth_loop(points: Array[Vector2], steps: int) -> Array[Vector3]:
 
 func _create_road(world: Node3D, points: Array[Vector3], width: float) -> void:
     var road_mat := _mat(Color(0.075, 0.085, 0.105), 0.03, 0.88)
+    # Procedural road winding can vary around tight curves; disable back-face culling
+    # so the asphalt remains visible even if a triangle winding is reversed.
+    road_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
     var road_st := SurfaceTool.new()
     road_st.begin(Mesh.PRIMITIVE_TRIANGLES)
     var half := width * 0.5
@@ -177,33 +183,50 @@ func _add_city_along_track(world: Node3D, points: Array[Vector3]) -> void:
     var tree_leaf := _mat(Color(0.075, 0.27, 0.17), 0.03, 0.82)
     var lamp_mat := _mat(Color(0.33, 0.40, 0.46), 0.67, 0.3)
     var lamp_light := _mat(Color(0.84, 0.94, 1.0), 0.1, 0.3, true)
-    for i in range(0, points.size(), 6):
+    # Sample more frequently and base decoration spacing on the sample index,
+    # not the raw point index. The old step of 6 made the lamp/tree modulo
+    # branches unreachable except where a building branch took priority.
+    var sample_index := 0
+    for i in range(0, points.size(), 3):
         var p: Vector3 = points[i]
         var next: Vector3 = points[(i + 1) % points.size()]
         var direction := (next - p).normalized()
         var normal := Vector3(-direction.z, 0.0, direction.x).normalized()
         for side in [-1.0, 1.0]:
-            var base := p + normal * (ROAD_WIDTH * 0.5 + _rng.randf_range(9.0, 19.0)) * side
+            var base: Vector3 = p + normal * (ROAD_WIDTH * 0.5 + _rng.randf_range(9.0, 19.0)) * side
             base.y = 0.0
-            if i % 12 == 0:
+            if sample_index % 5 == 0:
                 var bw := _rng.randf_range(5.5, 10.0)
                 var bh := _rng.randf_range(7.0, 21.0)
                 var bd := _rng.randf_range(5.0, 9.0)
                 var building_mat := _mat(building_colors[_rng.randi_range(0, building_colors.size() - 1)], 0.16, 0.72)
                 _add_box(world, "CityBuilding", Vector3(bw, bh, bd), base + Vector3(0, bh * 0.5, 0), building_mat, true)
-                var front_z := base.z + bd * 0.5 + 0.025
+                # Windows on all four facades keep the city readable from bends.
+                var window_y_start := 1.0
                 for floor_index in range(1, int(bh / 2.8)):
                     for column in range(2):
                         var wx := base.x + (float(column) - 0.5) * bw * 0.52
-                        _add_box(world, "LitWindow", Vector3(0.75, 0.85, 0.06), Vector3(wx, float(floor_index) * 2.45 + 1.0, front_z), window_mat, false)
-                if i % 24 == 0:
+                        var wz_front := base.z + bd * 0.5 + 0.025
+                        var wz_back := base.z - bd * 0.5 - 0.025
+                        var wy := float(floor_index) * 2.45 + window_y_start
+                        _add_box(world, "LitWindow", Vector3(0.75, 0.85, 0.06), Vector3(wx, wy, wz_front), window_mat, false)
+                        _add_box(world, "LitWindow", Vector3(0.75, 0.85, 0.06), Vector3(wx, wy, wz_back), window_mat, false)
+                        var wx_left := base.x - bw * 0.5 - 0.025
+                        var wx_right := base.x + bw * 0.5 + 0.025
+                        var side_z := base.z + (float(column) - 0.5) * bd * 0.52
+                        var left_window := _add_box(world, "LitWindow", Vector3(0.06, 0.85, 0.75), Vector3(wx_left, wy, side_z), window_mat, false)
+                        var right_window := _add_box(world, "LitWindow", Vector3(0.06, 0.85, 0.75), Vector3(wx_right, wy, side_z), window_mat, false)
+                        left_window.rotation.y = 0.0
+                        right_window.rotation.y = 0.0
+                if sample_index % 10 == 0:
                     _add_box(world, "StorefrontCanopy", Vector3(bw * 0.82, 0.34, 0.65), base + Vector3(0, 2.0, bd * 0.5 + 0.30), shop_sign, false)
-            elif i % 8 == 0:
+            elif sample_index % 3 == 0:
                 _add_lamp(world, base, lamp_mat, lamp_light)
-            elif i % 4 == 0:
-                _add_tree(world, base + Vector3(0, 0.0, 0.0), tree_trunk, tree_leaf)
-            elif i % 18 == 0:
+            elif sample_index % 2 == 0:
+                _add_tree(world, base, tree_trunk, tree_leaf)
+            elif sample_index % 7 == 0:
                 _add_pedestrian(world, base, Color(0.20 + _rng.randf() * 0.7, 0.18 + _rng.randf() * 0.6, 0.16 + _rng.randf() * 0.75))
+        sample_index += 1
     # A handful of parked traffic vehicles give the roadside depth without adding AI claims.
     for i in range(10):
         var p: Vector3 = points[(i * 9 + 7) % points.size()]

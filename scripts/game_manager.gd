@@ -96,6 +96,8 @@ func _show_main_menu() -> void:
     get_tree().paused = false
     current_screen = "menu"
     player_car = null
+    if is_instance_valid(camera_rig):
+        camera_rig.queue_free()
     camera_rig = null
     hud = null
     _free_race_manager()
