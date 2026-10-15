@@ -3,7 +3,7 @@
 
 **Godot 4.x · GDScript · Android 9+ · Offline-first · GitHub Actions APK build**
 
-This is a self-contained Godot project with a playable procedural driving loop, a curved city sprint course, touch controls, local synthetic audio, and a GitHub Actions Android export workflow. Game geometry, materials and the three fictional vehicles are generated locally by GDScript; the game does not download resources when it runs.
+This is a self-contained Godot project with a playable procedural driving loop, a curved city sprint course, touch controls, local synthetic audio, and a GitHub Actions Android export workflow. Game geometry, materials and the six fictional vehicles are generated locally by GDScript; the game does not download resources when it runs.
 
 > **Important scope note:** this is a developed, playable foundation—not a finished AAA commercial game. It does not bundle photorealistic licensed car models, real-world city scans, recordings of actual Ferrari/Lamborghini/Toyota engines, AI racing opponents, or licensed music. The included car designs are original fictional procedural meshes; all supplied sounds are synthesized locally for the project. The city is a stylized procedural environment rather than a 1:1 replica of a real city. No real manufacturer names or logos are used as in-game vehicle branding.
 
@@ -11,7 +11,7 @@ This is a self-contained Godot project with a playable procedural driving loop, 
 
 - **Race Mode:** a solo sprint against an 850 m distance target, with countdown, elapsed time, actual distance travelled, top speed, collision count and a score calculated from the session. There are no invented opponents or fake ranking positions.
 - **Free Drive:** the same curved city circuit with no forced time limit or loss screen.
-- **Garage:** three selectable procedural cars with different top speed, acceleration, braking and handling parameters. The selected car is saved locally.
+- **Garage:** six selectable procedural cars with different top speed, acceleration, braking and handling parameters. The selected car is saved locally.
 - **Driving HUD:** live speed (km/h), RPM derived from the vehicle controller, time, distance and race progress; pause, camera switch, steering, throttle, brake and boost controls.
 - **Three control modes:** HYDRAULIC STEERING (interactive touch wheel with gradual recentering), BUTTON STEERING (hold left/right), and TILT STEERING (phone sensor, with a clear warning when sensors are unavailable).
 - **Cameras:** smoothed chase camera and a camera anchor attached to a simple 3D cockpit built into each car.
@@ -64,7 +64,7 @@ Menu, garage, settings, pause overlay and results UI are composed by GDScript at
 4. Wait for the run to finish. In the successful run, download the artifact named **Velocity-Rush-3D-Android-APK**. It contains `VelocityRush3D.apk`.
 5. Install that APK on the Android device. Android may ask you to allow installation from the browser/file manager you used.
 
-The workflow downloads the pinned Godot 4.4.1 editor and its matching official Android export templates, configures Java 17 and the Android SDK, runs a local-resource preflight, imports/parses the project in Godot headless mode and exports a debug APK. It does not require Android Studio on your phone. The APK is debug-signed for testing, not a production Play Store release.
+The workflow downloads the pinned Godot 4.4.1 editor and its matching official Android export templates, configures Java 17 and the Android SDK, runs a local-resource/audio-bus preflight, imports the project, runs a headless startup smoke test and exports a debug APK. It does not require Android Studio on your phone. The APK is debug-signed for testing, not a production Play Store release.
 
 ## Run locally in Godot
 

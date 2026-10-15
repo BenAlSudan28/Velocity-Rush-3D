@@ -27,7 +27,7 @@ window/handheld/orientation=0
 
 [audio]
 
-default_bus_layout="res://assets/sounds/default_bus_layout.tres"
+buses/default_bus_layout="res://assets/sounds/default_bus_layout.tres"
 
 [rendering]
 
