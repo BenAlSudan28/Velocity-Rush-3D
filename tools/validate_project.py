@@ -69,8 +69,29 @@ for wav_path in sorted((ROOT / "assets" / "sounds").rglob("*.wav")):
 project = (ROOT / "project.godot").read_text(encoding="utf-8")
 if 'run/main_scene="res://scenes/main.tscn"' not in project:
     errors.append("Main scene is not configured in project.godot")
+if 'buses/default_bus_layout="res://assets/sounds/default_bus_layout.tres"' not in project:
+    errors.append("Godot audio bus setting must use audio/buses/default_bus_layout")
+if '\ndefault_bus_layout=' in project:
+    errors.append("Legacy/incorrect default_bus_layout key found in project.godot")
 if 'name="Android"' not in (ROOT / "export_presets.cfg").read_text(encoding="utf-8"):
     errors.append("Android export preset name must be exactly Android")
+
+# The game uses three named audio buses. A blank/invalid layout silently
+# routes them incorrectly and makes the individual volume settings ineffective.
+bus_layout_path = ROOT / "assets" / "sounds" / "default_bus_layout.tres"
+if not bus_layout_path.is_file() or bus_layout_path.stat().st_size < 100:
+    errors.append("Audio bus layout is missing or empty: assets/sounds/default_bus_layout.tres")
+else:
+    bus_layout = bus_layout_path.read_text(encoding="utf-8")
+    for bus_name in ("Master", "Engine", "SFX", "Music"):
+        if f'&"{bus_name}"' not in bus_layout:
+            errors.append(f"Audio bus layout is missing bus: {bus_name}")
+
+# Avoid shipping empty scene/resource files, which can be overlooked by
+# reference-only checks.
+for path in ROOT.rglob("*"):
+    if path.is_file() and path.suffix in {".gd", ".tscn", ".tres", ".wav"} and path.stat().st_size == 0:
+        errors.append(f"Empty project asset: {path.relative_to(ROOT)}")
 
 if errors:
     print("PROJECT PREFLIGHT FAILED:")
