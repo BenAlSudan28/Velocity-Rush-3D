@@ -65,7 +65,7 @@ jobs:
             "build-tools;35.0.1" \
             "cmdline-tools;latest" \
             "cmake;3.10.2.4988404" \
-            "ndk;28.1.13356709"
+            "ndk;23.2.8568313"
 
       - name: Download Godot and export templates
         shell: bash
@@ -279,12 +279,7 @@ jobs:
             echo "::error::Godot startup smoke test failed with exit code $SMOKE_STATUS."
             exit "$SMOKE_STATUS"
           fi
-          # Godot can print cleanup-only resource-leak diagnostics when the
-          # headless process exits after --quit-after. Do not confuse those
-          # shutdown messages with startup/script failures; keep failing on
-          # actual script, parse, and other ERROR diagnostics.
-          if grep -E 'SCRIPT ERROR:|Parse Error:|ERROR:' build/smoke.log \
-            | grep -Ev 'ERROR: [0-9]+ resources still in use at exit'; then
+          if grep -E 'SCRIPT ERROR:|Parse Error:|ERROR:' build/smoke.log; then
             echo "::error::Godot reported script or runtime errors during startup."
             exit 1
           fi
