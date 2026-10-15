@@ -21,6 +21,7 @@ var wheel: Control
 var brake_pedal: Button
 var throttle_pedal: Button
 var nitro_button: Button
+var nitro_bar: ProgressBar
 var left_button: Button
 var right_button: Button
 var pause_layer: Control
@@ -48,7 +49,7 @@ func _build_hud() -> void:
     tint.name = "HudVignette"
     tint.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
     tint.mouse_filter = Control.MOUSE_FILTER_IGNORE
-    tint.color = Color(0.005, 0.012, 0.020, 0.12)
+    tint.color = Color(0.005, 0.012, 0.020, 0.025)
     add_child(tint)
     var stats_panel := _panel("TelemetryPanel", Vector2(24, 20), Vector2(490, 98), Color(0.012, 0.025, 0.040, 0.82))
     var row := HBoxContainer.new()
@@ -262,6 +263,11 @@ func _process(delta: float) -> void:
         _elapsed_local += delta
     var speed := float(vehicle.call("get_speed_kmh"))
     var rpm := float(vehicle.get("rpm"))
+    if vehicle.has_method("get_nitro_percentage"):
+        var nitro_level := float(vehicle.call("get_nitro_percentage"))
+        nitro_bar.value = nitro_level
+        nitro_button.text = "N₂O BOOST %d%%" % int(round(nitro_level))
+        nitro_button.disabled = nitro_level <= 0.5
     speed_label.text = "%03d" % int(round(speed))
     rpm_label.text = "RPM  %04d" % int(round(rpm))
     var snapshot: Dictionary = race_manager.call("snapshot")
