@@ -1,6 +1,11 @@
 # Project audit and repair notes
 
 ## Changes applied
+- Deferred Garage navigation and changed dynamic UI/world cleanup to queued deletion, avoiding immediate destruction of the button/control currently dispatching a touch event.
+- Hardened touch pedals by relying on button-down/button-up signals instead of the unreliable `mouse_exited` path on mobile.
+- Added four procedural AI opponents in Race Mode. Each opponent follows the generated loop, waits for the start countdown, and stops when the race ends.
+- Added a finite nitro charge with boost acceleration, gradual recharge, live percentage text, and a HUD charge bar.
+- Replaced the night-black world background with a procedural blue daytime sky, brighter ambient/sun lighting, a lighter asphalt material, brighter building palettes, and greener landscape.
 - Added a real Godot `AudioBusLayout` resource with `Master`, `Engine`, `SFX`, and `Music` buses. The previous resource was effectively empty, so individual audio volume settings could not be routed as intended.
 - Fixed a lifecycle issue in `scripts/game_manager.gd`: returning to the main menu now queues the previous camera rig for deletion instead of leaving stale camera nodes behind.
 - Expanded the garage from three to six selectable original procedural vehicles with distinct performance values and paint colors.
@@ -16,6 +21,8 @@
 - Removed the stray empty `tools/4` file.
 
 ## Verification status
+- Python project preflight and resource-reference checks were rerun after these changes and passed.
+- A Godot executable is not installed in this editing environment, so the modified GDScript still needs the GitHub Actions headless parse/startup step to confirm engine-level syntax and runtime behavior.
 - `python3 tools/validate_project.py`: **PASS** in this environment after the latest repairs.
 - Project resource reference scan and WAV integrity checks: included in the preflight validator and passed.
 - Static inspection confirms the previous steering type-inference issue and the city decoration modulo/step mismatch have been corrected.

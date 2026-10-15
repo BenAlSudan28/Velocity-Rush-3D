@@ -5,11 +5,11 @@
 
 This is a self-contained Godot project with a playable procedural driving loop, a curved city sprint course, touch controls, local synthetic audio, and a GitHub Actions Android export workflow. Game geometry, materials and the six fictional vehicles are generated locally by GDScript; the game does not download resources when it runs.
 
-> **Important scope note:** this is a developed, playable foundation—not a finished AAA commercial game. It does not bundle photorealistic licensed car models, real-world city scans, recordings of actual Ferrari/Lamborghini/Toyota engines, AI racing opponents, or licensed music. The included car designs are original fictional procedural meshes; all supplied sounds are synthesized locally for the project. The city is a stylized procedural environment rather than a 1:1 replica of a real city. No real manufacturer names or logos are used as in-game vehicle branding.
+> **Important scope note:** this is a developed, playable foundation—not a finished AAA commercial game. It does not bundle photorealistic licensed car models, real-world city scans, recordings of actual Ferrari/Lamborghini/Toyota engines, licensed music. The included car designs are original fictional procedural meshes; all supplied sounds are synthesized locally for the project. The city is a stylized procedural environment rather than a 1:1 replica of a real city. No real manufacturer names or logos are used as in-game vehicle branding.
 
 ## Implemented gameplay
 
-- **Race Mode:** a solo sprint against an 850 m distance target, with countdown, elapsed time, actual distance travelled, top speed, collision count and a score calculated from the session. There are no invented opponents or fake ranking positions.
+- **Race Mode:** an 850 m sprint with countdown and four procedural AI rivals following the circuit; elapsed time, distance, top speed, collisions and session score are tracked.
 - **Free Drive:** the same curved city circuit with no forced time limit or loss screen.
 - **Garage:** six selectable procedural cars with different top speed, acceleration, braking and handling parameters. The selected car is saved locally.
 - **Driving HUD:** live speed (km/h), RPM derived from the vehicle controller, time, distance and race progress; pause, camera switch, steering, throttle, brake and boost controls.
