@@ -75,6 +75,39 @@ if '\ndefault_bus_layout=' in project:
     errors.append("Legacy/incorrect default_bus_layout key found in project.godot")
 if 'name="Android"' not in (ROOT / "export_presets.cfg").read_text(encoding="utf-8"):
     errors.append("Android export preset name must be exactly Android")
+if '"ndk;23.2.8568313"' not in (ROOT / ".github/workflows/build-android.yml").read_text(encoding="utf-8"):
+    errors.append("Godot 4.4.1 Android workflow should use the compatible NDK r23c package")
+
+# Guard against regressions in the mobile-driving path. A previous HUD version
+# read nitro_bar.value without ever constructing nitro_bar; the runtime error
+# aborted HUD _process() before set_inputs(), making all driving controls inert.
+hud_path = ROOT / "scripts" / "ui" / "driving_hud.gd"
+hud_source = hud_path.read_text(encoding="utf-8") if hud_path.is_file() else ""
+if "nitro_bar = ProgressBar.new()" not in hud_source:
+    errors.append("Driving HUD must instantiate its nitro charge ProgressBar")
+else:
+    process_start = hud_source.find("func _process(delta: float) -> void:")
+    process_end = hud_source.find("\nfunc _toggle_pause()", process_start)
+    process_body = hud_source[process_start:process_end] if process_start >= 0 and process_end > process_start else ""
+    input_forward = process_body.find('vehicle.call("set_inputs"')
+    nitro_update = process_body.find("nitro_bar.value = nitro_level")
+    if input_forward < 0:
+        errors.append("Driving HUD must forward input through vehicle.set_inputs()")
+    elif nitro_update >= 0 and input_forward > nitro_update:
+        errors.append("Driving HUD must forward controls before updating optional HUD widgets")
+
+pedal_source = (ROOT / "scripts" / "ui" / "pedal_control.gd").read_text(encoding="utf-8")
+if "InputEventScreenTouch" not in pedal_source or "_touch_index" not in pedal_source:
+    errors.append("Mobile pedals must track touchscreen indices for simultaneous touch controls")
+manager_source = (ROOT / "scripts" / "game_manager.gd").read_text(encoding="utf-8")
+if 'race_manager.connect("race_started", _start_ai_opponents)' not in manager_source or 'opponent.call("setup_ai", centreline, speeds[index])' not in manager_source:
+    errors.append("Race Mode must connect race start and initialize AI opponents")
+
+car_source = (ROOT / "scripts" / "car_controller.gd").read_text(encoding="utf-8")
+if "func get_fuel_percentage()" not in car_source or "func refuel()" not in car_source or "fuel_level = maxf(0.0" not in car_source:
+    errors.append("Vehicle controller must implement fuel consumption, fuel telemetry, and refuelling")
+if "FuelLevelBar" not in hud_source or "func _try_refuel()" not in hud_source:
+    errors.append("Driving HUD must display fuel and provide a Free Drive refuelling action")
 
 # The game uses three named audio buses. A blank/invalid layout silently
 # routes them incorrectly and makes the individual volume settings ineffective.
