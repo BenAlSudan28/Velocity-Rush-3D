@@ -26,6 +26,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Run project preflight checks
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          python3 tools/validate_project.py
+
       - name: Install Java 17
         uses: actions/setup-java@v4
         with:
@@ -248,7 +254,36 @@ jobs:
             --import \
             --quit 2>&1 | tee build/import.log
 
-          echo "Godot project import completed."
+          if grep -E 'SCRIPT ERROR:|Parse Error:|ERROR:' build/import.log; then
+            echo "::error::Godot reported errors during project import."
+            exit 1
+          fi
+
+          echo "Godot project import completed without reported parse/import errors."
+
+      - name: Run headless game startup smoke test
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p build
+          echo "Starting the main scene headlessly to catch startup/script errors..."
+          set +e
+          timeout 45s "$GODOT_BIN" \
+            --headless \
+            --path "$GITHUB_WORKSPACE" \
+            --quit-after 120 \
+            2>&1 | tee build/smoke.log
+          SMOKE_STATUS=${PIPESTATUS[0]}
+          set -e
+          if [[ "$SMOKE_STATUS" -ne 0 ]]; then
+            echo "::error::Godot startup smoke test failed with exit code $SMOKE_STATUS."
+            exit "$SMOKE_STATUS"
+          fi
+          if grep -E 'SCRIPT ERROR:|Parse Error:|ERROR:' build/smoke.log; then
+            echo "::error::Godot reported script or runtime errors during startup."
+            exit 1
+          fi
+          echo "Headless startup smoke test passed."
 
       - name: Diagnose Android export configuration
         shell: bash
