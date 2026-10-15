@@ -30,3 +30,13 @@
 
 ## Asset note
 The vehicle models and city are procedural, original in-game geometry. The project does not contain licensed photorealistic Ferrari, Lamborghini, or Toyota 3D models or manufacturer logos. The six garage vehicles are fictional designs rather than representations of real manufacturer models.
+
+
+## Mobile control hotfix after device testing
+- Found a concrete runtime bug in `scripts/ui/driving_hud.gd`: the HUD declared `nitro_bar` but did not instantiate it, then assigned `nitro_bar.value` each frame. That null-instance error interrupted `_process()` before it forwarded throttle, brake, steering, and nitro inputs to the car.
+- Instantiated and styled the nitro charge bar; reordered the HUD update so `vehicle.set_inputs()` is called before optional telemetry widgets are updated; added validity checks around HUD elements.
+- Changed the nitro button to use the same pressure-aware pedal component as the throttle/brake, so it also receives direct touch-index tracking.
+- Updated `scripts/ui/pedal_control.gd` to track `InputEventScreenTouch.index` in addition to desktop mouse signals. This lets the throttle/brake/nitro hold state work independently of a second finger steering, while still releasing the correct pedal when its finger lifts.
+- Aligned the four race opponents to the first track tangent and placed them in two rows ahead of the player, within the chase camera view, instead of fixed world-axis offsets that could place them beside/ahead of the player on a curved starting segment.
+- Extended `tools/validate_project.py` to detect a missing nitro progress bar, ensure controls are forwarded before HUD updates, verify multitouch tracking, and check race-AI hookup.
+- Validation performed here: Python preflight/resource checks and static source checks. The Godot executable is not installed in this editing environment, so engine parsing, device multitouch, AI driving, and the Android APK still require a new successful GitHub Actions run and on-device play test.
